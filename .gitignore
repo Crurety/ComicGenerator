@@ -4,6 +4,7 @@
 .vscode/
 *.log
 *.tar.gz
+*.pem
 
 # Python
 __pycache__/

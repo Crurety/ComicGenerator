@@ -37,6 +37,9 @@ jobs:
             
             # Create/Update .env file
             echo "MIDJOURNEY_API_KEY=${{ secrets.MIDJOURNEY_API_KEY }}" > .env
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+            echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
+            echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
             echo "POSTGRES_PASSWORD=comic_password" >> .env
             echo "FLASK_ENV=production" >> .env
             
