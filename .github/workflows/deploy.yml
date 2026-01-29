@@ -1,0 +1,49 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Copy files via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          source: "."
+          target: "/opt/comic-generator"
+          # Exclude files to speed up transfer and avoid overwriting server-specific files
+          exclude: ".git,.github,.venv,node_modules,frontend/node_modules,backend/venv,backend/__pycache__,**/*.pyc"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd /opt/comic-generator
+            
+            # Create/Update .env file
+            echo "MIDJOURNEY_API_KEY=${{ secrets.MIDJOURNEY_API_KEY }}" > .env
+            echo "POSTGRES_PASSWORD=comic_password" >> .env
+            echo "FLASK_ENV=production" >> .env
+            
+            # Rebuild and restart
+            # Using docker compose (v2)
+            docker compose down
+            docker compose up -d --build
+            
+            # Clean up unused images
+            docker image prune -f
