@@ -1,0 +1,56 @@
+# Git
+.git
+.github
+
+# Python
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+
+# Node
+node_modules
+frontend/node_modules
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts (will be built on server)
+frontend/build
+frontend/dist
+
+# Logs
+*.log
+logs/
+
+# Local environment
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test.js
+*.spec.js
+coverage/
+
+# Documentation (optional, uncomment to include)
+# *.md
+
+# Debug scripts (not needed on server)
+debug_*.py
+fetch_*.py
+manual_*.py
+start_*.py
+sync_*.py
+*.tar.gz

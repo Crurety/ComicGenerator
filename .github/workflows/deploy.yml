@@ -9,21 +9,21 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # 添加超时限制，防止无限等待
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Copy files via SCP
-        uses: appleboy/scp-action@master
+      # 使用 rsync 替代 SCP，支持增量同步，大幅提升速度
+      - name: Deploy files via rsync
+        uses: burnett01/rsync-deployments@7.0.1
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          source: "."
-          target: "/opt/comic-generator"
-          # Exclude files to speed up transfer and avoid overwriting server-specific files
-          exclude: ".git,.github,.venv,node_modules,frontend/node_modules,backend/venv,backend/__pycache__,**/*.pyc"
+          switches: -avzr --delete --exclude-from='.deployignore'
+          path: ./
+          remote_path: /opt/comic-generator/
+          remote_host: ${{ secrets.SERVER_HOST }}
+          remote_user: ${{ secrets.SERVER_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
@@ -32,21 +32,27 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          timeout: 10m  # SSH 命令超时时间
+          command_timeout: 10m
           script: |
             cd /opt/comic-generator
             
             # Create/Update .env file
-            echo "MIDJOURNEY_API_KEY=${{ secrets.MIDJOURNEY_API_KEY }}" > .env
-            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
             echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
             echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
             echo "POSTGRES_PASSWORD=comic_password" >> .env
             echo "FLASK_ENV=production" >> .env
             
-            # Rebuild and restart
-            # Using docker compose (v2)
-            docker compose down
-            docker compose up -d --build
+            # 只在配置文件变化时重新构建
+            # 检查是否需要重建前端（package.json 或 Dockerfile 变化）
+            if docker compose ps | grep -q "frontend.*Up"; then
+              echo "Frontend is running, checking if rebuild needed..."
+              docker compose up -d --build backend  # 只重建后端（更快）
+            else
+              echo "Starting all services..."
+              docker compose up -d --build
+            fi
             
             # Clean up unused images
             docker image prune -f
