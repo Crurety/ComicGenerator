@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.comic import ComicImage
 from app.models.project import Project
 from app.models.character import CharacterTemplate
-from app.services.midjourney import MidjourneyService
+from app.services.gemini import get_gemini_service
 from app import db
 
 bp = Blueprint('comics', __name__, url_prefix='/api/comics')
@@ -150,13 +150,14 @@ def generate_comic_image():
     if not data or not data.get('prompt'):
         return jsonify({'error': 'Prompt is required'}), 400
         
-    mj_service = MidjourneyService()
+    gemini_service = get_gemini_service()
     try:
         character_template = None
         if data.get('character_template_id'):
             character_template = CharacterTemplate.query.get(data['character_template_id'])
-            
-        result = mj_service.generate_image(data['prompt'], character_template)
+        
+        # 使用 Gemini 生成图片
+        result = gemini_service.generate_image(data['prompt'], character_template)
         return jsonify(result)
     except Exception as e:
         import traceback
@@ -166,9 +167,10 @@ def generate_comic_image():
 @bp.route('/status/<task_id>', methods=['GET'])
 @jwt_required()
 def check_generation_status(task_id):
-    mj_service = MidjourneyService()
+    gemini_service = get_gemini_service()
     try:
-        result = mj_service.check_task_status(task_id)
+        # 使用 Gemini 检查任务状态
+        result = gemini_service.check_task_status(task_id)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

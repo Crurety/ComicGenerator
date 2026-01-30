@@ -3,7 +3,6 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.project import Project
 from app.models.storyboard import Storyboard
 from app.models.comic import ComicImage
-from app.services.midjourney import MidjourneyService
 from app.services.gemini import get_gemini_service
 from app import db
 import uuid
@@ -65,7 +64,7 @@ def save_storyboards():
 @bp.route('/generate_all', methods=['POST'])
 @jwt_required()
 def generate_all_images():
-    """Step 3: 批量生成漫画图片"""
+    """Step 3: 批量生成漫画图片 - 使用 Gemini AI"""
     user_id = get_jwt_identity()
     data = request.get_json()
     project_id = data.get('project_id')
@@ -78,28 +77,21 @@ def generate_all_images():
     
     if not storyboards:
         return jsonify({'error': '没有找到分镜脚本'}), 404
-        
-    mj_service = MidjourneyService()
+    
+    # 使用 Gemini 服务生成图片
+    gemini_service = get_gemini_service()
     results = []
     
     try:
         for sb in storyboards:
-            # 构建 Prompt
-            full_prompt = f"{sb.description}, {sb.camera}, {sb.mood}, anime style --ar 16:9"
+            # 构建 Prompt (移除 Midjourney 特有的参数如 --ar 16:9)
+            full_prompt = f"{sb.description}, {sb.camera}, {sb.mood}"
             
-            # 调用生成服务 (Mock)
-            # 注意：实际生产中这里应该是异步队列任务，不能在请求中循环等待
-            # 这里为了演示 Mock 效果，直接同步调用
-            result = mj_service.generate_image(full_prompt)
+            # 使用 Gemini 生成图片
+            # Gemini 的图片生成是同步的，直接返回结果
+            result = gemini_service.generate_image(full_prompt)
             
-            # 如果是 Mock 结果，可能没有 task_id 或者需要立即检查
-            if result.get('status') == 'pending':
-                # 模拟立即完成 (针对 Mock 模式)
-                task_id = result.get('task_id')
-                status_res = mj_service.check_task_status(task_id)
-                image_url = status_res.get('image_url')
-            else:
-                image_url = result.get('image_url')
+            image_url = result.get('image_url')
 
             if image_url:
                 # 创建 ComicImage 记录
@@ -107,7 +99,7 @@ def generate_all_images():
                     project_id=project_id,
                     prompt=full_prompt,
                     image_url=image_url,
-                    midjourney_task_id=result.get('task_id'),
+                    midjourney_task_id=result.get('task_id'),  # 保留字段名以兼容
                     position_x=0,
                     position_y=0,
                     width=400,

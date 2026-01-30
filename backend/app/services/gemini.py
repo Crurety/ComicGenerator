@@ -1,18 +1,26 @@
 """
 Gemini AI 服务模块
 使用新版 google-genai SDK
-支持 gemini-3-flash-preview 模型
+支持 gemini-3-flash-preview 模型 (文本) 和 gemini-2.5-flash-image (图像生成)
 通过环境变量配置代理
 """
 import os
 import json
 import re
+import base64
+import uuid
+from pathlib import Path
 
 class GeminiService:
     def __init__(self):
         self.api_key = os.getenv('GEMINI_API_KEY')
         self.client = None
         self.model_name = "gemini-3-flash-preview"
+        self.image_model_name = "gemini-2.5-flash-image"
+        
+        # 设置图片保存目录
+        self.image_save_dir = Path(os.getenv('IMAGE_SAVE_DIR', 'static/images'))
+        self.image_save_dir.mkdir(parents=True, exist_ok=True)
         
         # 配置代理环境变量 (httpx 会自动读取)
         http_proxy = os.getenv('HTTPS_PROXY') or os.getenv('HTTP_PROXY')
@@ -117,6 +125,129 @@ class GeminiService:
             pass
         
         return None
+    
+    def generate_image(self, prompt, character_template=None):
+        """
+        使用 Gemini 生成图像
+        
+        Args:
+            prompt: 图像描述提示词
+            character_template: 可选的角色模板，用于保持角色一致性
+            
+        Returns:
+            dict: 包含 image_url 和 task_id 的结果
+        """
+        if not self.client:
+            print("Warning: No Gemini client. Using mock image generation.")
+            return self._mock_generate_image(prompt)
+        
+        # 应用角色一致性
+        if character_template:
+            prompt = self._apply_character_consistency(prompt, character_template)
+        
+        # 增强 prompt 以适应漫画风格
+        enhanced_prompt = f"{prompt}, anime style, manga art, high quality illustration, detailed artwork"
+        
+        try:
+            response = self.client.models.generate_content(
+                model=self.image_model_name,
+                contents=enhanced_prompt
+            )
+            
+            # 处理响应，提取图像
+            for part in response.parts:
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    # 提取图像数据
+                    image_data = part.inline_data.data
+                    mime_type = part.inline_data.mime_type or 'image/png'
+                    
+                    # 生成唯一文件名
+                    task_id = f"gemini-{uuid.uuid4()}"
+                    extension = 'png' if 'png' in mime_type else 'jpg'
+                    filename = f"{task_id}.{extension}"
+                    filepath = self.image_save_dir / filename
+                    
+                    # 保存图像文件
+                    with open(filepath, 'wb') as f:
+                        if isinstance(image_data, str):
+                            # Base64 编码的数据
+                            f.write(base64.b64decode(image_data))
+                        else:
+                            # 二进制数据
+                            f.write(image_data)
+                    
+                    # 返回相对 URL 路径
+                    image_url = f"/static/images/{filename}"
+                    
+                    return {
+                        "task_id": task_id,
+                        "status": "completed",
+                        "image_url": image_url,
+                        "progress": 100
+                    }
+            
+            # 如果没有找到图像数据，使用 mock
+            print("No image data in Gemini response, falling back to mock")
+            return self._mock_generate_image(prompt)
+            
+        except Exception as e:
+            print(f"Gemini image generation error: {e}")
+            return self._mock_generate_image(prompt)
+    
+    def _mock_generate_image(self, prompt):
+        """模拟图像生成（当API不可用时）"""
+        task_id = f"mock-{uuid.uuid4()}"
+        # 使用 ui-avatars 生成带文字的占位图
+        random_color = uuid.uuid4().hex[:6]
+        return {
+            "task_id": task_id,
+            "status": "completed",
+            "image_url": f"https://ui-avatars.com/api/?name=AI+Image&background={random_color}&color=fff&size=512&font-size=0.33",
+            "progress": 100
+        }
+    
+    def check_task_status(self, task_id):
+        """
+        检查任务状态
+        对于 Gemini 来说，图像生成是同步的，所以这个方法主要用于兼容性
+        """
+        if str(task_id).startswith('mock-'):
+            random_color = uuid.uuid4().hex[:6]
+            return {
+                "task_id": task_id,
+                "status": "completed",
+                "image_url": f"https://ui-avatars.com/api/?name=AI+Image&background={random_color}&color=fff&size=512&font-size=0.33",
+                "progress": 100
+            }
+        
+        # 对于真实的 Gemini 生成，图像已经同步返回
+        # 这里返回已完成状态
+        return {
+            "task_id": task_id,
+            "status": "completed",
+            "progress": 100
+        }
+    
+    def _apply_character_consistency(self, prompt, character_template):
+        """应用角色一致性到prompt"""
+        if not character_template:
+            return prompt
+        
+        consistency_features = []
+        
+        if hasattr(character_template, 'features') and character_template.features:
+            for key, value in character_template.features.items():
+                if value:
+                    consistency_features.append(f"{key}:{value}")
+        
+        if hasattr(character_template, 'description') and character_template.description:
+            consistency_features.append(character_template.description)
+        
+        if consistency_features:
+            consistency_prompt = ", ".join(consistency_features)
+            return f"{prompt}, {consistency_prompt}"
+        
+        return prompt
     
     def _mock_analyze(self, story_text):
         """
