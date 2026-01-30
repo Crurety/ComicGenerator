@@ -149,49 +149,66 @@ class GeminiService:
         enhanced_prompt = f"{prompt}, anime style, manga art, high quality illustration, detailed artwork"
         
         try:
+            from google.genai import types
+            
+            # 关键：必须设置 response_modalities 为 ['Image'] 才能生成图片
+            # 同时设置 image_config 来控制图片宽高比
             response = self.client.models.generate_content(
                 model=self.image_model_name,
-                contents=enhanced_prompt
+                contents=enhanced_prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=['Image'],
+                    image_config=types.ImageConfig(
+                        aspect_ratio="16:9",  # 漫画常用宽高比
+                    )
+                )
             )
             
             # 处理响应，提取图像
-            for part in response.parts:
-                if hasattr(part, 'inline_data') and part.inline_data is not None:
-                    # 提取图像数据
-                    image_data = part.inline_data.data
-                    mime_type = part.inline_data.mime_type or 'image/png'
-                    
-                    # 生成唯一文件名
-                    task_id = f"gemini-{uuid.uuid4()}"
-                    extension = 'png' if 'png' in mime_type else 'jpg'
-                    filename = f"{task_id}.{extension}"
-                    filepath = self.image_save_dir / filename
-                    
-                    # 保存图像文件
-                    with open(filepath, 'wb') as f:
-                        if isinstance(image_data, str):
-                            # Base64 编码的数据
-                            f.write(base64.b64decode(image_data))
-                        else:
-                            # 二进制数据
-                            f.write(image_data)
-                    
-                    # 返回相对 URL 路径
-                    image_url = f"/static/images/{filename}"
-                    
-                    return {
-                        "task_id": task_id,
-                        "status": "completed",
-                        "image_url": image_url,
-                        "progress": 100
-                    }
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'inline_data') and part.inline_data is not None:
+                            # 提取图像数据
+                            image_data = part.inline_data.data
+                            mime_type = getattr(part.inline_data, 'mime_type', None) or 'image/png'
+                            
+                            # 生成唯一文件名
+                            task_id = f"gemini-{uuid.uuid4()}"
+                            extension = 'png' if 'png' in mime_type else 'jpg'
+                            filename = f"{task_id}.{extension}"
+                            filepath = self.image_save_dir / filename
+                            
+                            # 保存图像文件
+                            with open(filepath, 'wb') as f:
+                                if isinstance(image_data, str):
+                                    # Base64 编码的数据
+                                    f.write(base64.b64decode(image_data))
+                                else:
+                                    # 二进制数据
+                                    f.write(image_data)
+                            
+                            print(f"Gemini: Image saved to {filepath}")
+                            
+                            # 返回相对 URL 路径
+                            image_url = f"/static/images/{filename}"
+                            
+                            return {
+                                "task_id": task_id,
+                                "status": "completed",
+                                "image_url": image_url,
+                                "progress": 100
+                            }
             
-            # 如果没有找到图像数据，使用 mock
-            print("No image data in Gemini response, falling back to mock")
+            # 如果没有找到图像数据
+            print(f"No image data in Gemini response. Response: {response}")
             return self._mock_generate_image(prompt)
             
         except Exception as e:
+            import traceback
             print(f"Gemini image generation error: {e}")
+            traceback.print_exc()
             return self._mock_generate_image(prompt)
     
     def _mock_generate_image(self, prompt):
